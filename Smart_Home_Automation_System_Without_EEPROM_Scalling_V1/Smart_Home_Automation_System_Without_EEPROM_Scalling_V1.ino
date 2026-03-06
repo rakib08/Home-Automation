@@ -17,6 +17,7 @@
 */
 
 
+
 /* ======================================================
    Libraries
 ====================================================== */
@@ -97,9 +98,16 @@ struct Slot {
    Stored inside EEPROM
 */
 struct Config {
-  bool autoMode;           // auto / manual mode
-  float threshold;         // temperature threshold
-  bool lastState;          // last fan state
+
+  bool autoMode;    // auto / manual mode
+  float threshold;  // temperature threshold
+  bool lastState;   // last fan state
+
+  // Chicken house light settings
+  bool chickenAutoMode;
+  bool chickenState;
+  float chickenThreshold;
+
   Slot slots[SLOT_COUNT];  // time slot list
 };
 
@@ -146,6 +154,7 @@ void decThreshold();
    EEPROM Functions
 ====================================================== */
 
+
 /* Save configuration to EEPROM */
 void saveConfig() {
   EEPROM.put(0, cfg);
@@ -164,6 +173,11 @@ void loadConfig() {
 
     cfg.autoMode = true;
     cfg.threshold = 20;
+
+    // Default chicken light configuration
+    cfg.chickenAutoMode = true;
+    cfg.chickenState = false;
+    cfg.chickenThreshold = 18.0;
 
     // Default time slots
     int def[7][4] = {
@@ -184,6 +198,12 @@ void loadConfig() {
     for (int i = 7; i < 14; i++) {
       cfg.slots[i] = { 0, 0, 0, 0, false };
     }
+
+    // Apply stored chicken settings to runtime variables
+    chickenAutoMode = cfg.chickenAutoMode;
+    chickenLightState = cfg.chickenState;
+    chickenSummerThreshold = cfg.chickenThreshold;
+
 
     saveConfig();
   }
@@ -244,6 +264,10 @@ void decThreshold() {
 /* Set relay state */
 void setFan(bool s) {
 
+  // Prevent unnecessary operations
+  if (fanState == s)
+    return;
+
   fanState = s;
 
   digitalWrite(RELAY_PIN, s ? HIGH : LOW);
@@ -257,9 +281,18 @@ void setFan(bool s) {
 
 void setChickenLight(bool state) {
 
+  // Do nothing if state is already the same
+  if (chickenLightState == state)
+    return;
+
   chickenLightState = state;
 
-  digitalWrite(CHICKEN_LIGHT_PIN, state ? HIGH : LOW);  // Active HIGH relay
+  digitalWrite(CHICKEN_LIGHT_PIN, state ? HIGH : LOW);
+
+  // Save only when state actually changed
+  cfg.chickenState = state;
+
+  saveConfig();
 }
 
 
@@ -340,7 +373,7 @@ void getWeather(bool force = false) {
 
     String payload = http.getString();
 
-    DynamicJsonDocument doc(768);
+    DynamicJsonDocument doc(512);
     deserializeJson(doc, payload);
 
     currentTemp = doc["main"]["temp"].as<float>();
@@ -699,6 +732,10 @@ void handleChickenMode() {
 
   chickenAutoMode = !chickenAutoMode;
 
+  cfg.chickenAutoMode = chickenAutoMode;
+
+  saveConfig();
+
   server.sendHeader("Location", "/");
   server.send(303);
 }
@@ -711,9 +748,18 @@ void chickenThUp() {
 
   chickenSummerThreshold += 0.5;
 
-  // Prevent exceeding safe limit
   if (chickenSummerThreshold > 25)
     chickenSummerThreshold = 25;
+
+  cfg.chickenThreshold = chickenSummerThreshold;
+
+  //#############################################################################################
+
+  // This following line is needed for checking only, if want u can comment it out.
+  lastChickenCheckHour = -1;  // force new evaluation
+
+  //##############################################################################################
+  saveConfig();
 
   server.sendHeader("Location", "/");
   server.send(303);
@@ -727,9 +773,18 @@ void chickenThDown() {
 
   chickenSummerThreshold -= 0.5;
 
-  // Prevent going too low
   if (chickenSummerThreshold < 10)
     chickenSummerThreshold = 10;
+
+  cfg.chickenThreshold = chickenSummerThreshold;
+
+  //##################################################################################################
+
+  // This following line is needed for checking only, if want u can comment it out.
+  lastChickenCheckHour = -1;  // force new evaluation
+
+  //###################################################################################################
+  saveConfig();
 
   server.sendHeader("Location", "/");
   server.send(303);
@@ -755,10 +810,17 @@ void setup() {
   // ESP8266 LED is active LOW
   digitalWrite(LED_BUILTIN, HIGH);  // LED OFF initially
 
-  Serial.begin(115200);
 
   EEPROM.begin(EEPROM_SIZE);
   loadConfig();
+
+  /* ------------------------------------------------------
+   Restore Chicken Light Settings From EEPROM
+   This ensures the runtime variables match EEPROM
+------------------------------------------------------ */
+  chickenAutoMode = cfg.chickenAutoMode;
+  chickenSummerThreshold = cfg.chickenThreshold;
+  setChickenLight(cfg.chickenState);
 
   rf.enableTransmit(RF_PIN);
 
@@ -779,10 +841,9 @@ void setup() {
   }
 
   if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("\nWiFi Connected!");
-    Serial.println(WiFi.localIP());
+    // WiFi connected successfully
   } else {
-    Serial.println("\nWiFi not connected. Continuing without WiFi.");
+    // WiFi not connected, system will continue offline
   }
 
 
@@ -795,6 +856,7 @@ void setup() {
 
   getWeather(true);
 
+  lastChickenCheckHour = -1;  //Force first chicken temperature check after boot
 
   /* Web Routes */
 
@@ -839,8 +901,6 @@ void checkWiFi() {
   lastCheck = millis();
 
   if (WiFi.status() != WL_CONNECTED) {
-
-    Serial.println("WiFi lost. Reconnecting...");
 
     WiFi.disconnect();
     WiFi.begin(ssid.c_str(), WIFI_PASS);
