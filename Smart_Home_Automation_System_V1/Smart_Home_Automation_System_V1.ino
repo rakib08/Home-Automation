@@ -313,7 +313,8 @@ void incThreshold() {
 
   saveConfig();
 
-  server.send(200, "text/plain", "OK");
+  server.sendHeader("Location", "/");
+  server.send(303);
 }
 
 void decThreshold() {
@@ -324,7 +325,8 @@ void decThreshold() {
 
   saveConfig();
 
-  server.send(200, "text/plain", "OK");
+  server.sendHeader("Location", "/");
+  server.send(303);
 }
 
 /* ======================================================
@@ -550,18 +552,6 @@ void chickenLightLogic() {
 }
 
 
-/* =========================
-     WaterTank Function RF
-  ==========================*/
-void handleRF() {
-
-  rf.send(10168801, 24);
-
-  server.send(200, "text/plain", "Signal sent");
-}
-
-
-
 /* ======================================================
    Web Interface
 ====================================================== */
@@ -688,33 +678,33 @@ void handleRoot() {
   html += "</div>";
 
   /* ======================================================
-     Cooling System Card  (UPDATED - NO RELOAD)
+     Cooling System Card
   ====================================================== */
 
-
   html += "<div class='card'>";
-  html += "<h3>❄ Cooling System</h3>";
+  html += "<h3>❄️ Cooling System</h3>";
+  html += "<p style='margin:4px 0'>Status: <b id='fanStatus'>" + fanStatus + "</b></p>";
+  html += "<p style='margin:4px 0'>Mode: <span id='fanMode'>" + String(cfg.autoMode ? "AUTO" : "MANUAL") + "</span></p>";
 
-  // Status with ID for live update
-  html += "<p>Status: <b id='fanStatus'>" + fanStatus + "</b></p>";
+  // Threshold controls
+  html += "<div class='inline-group'>";
+  html += "<span>Threshold: <span id='fanThreshold' class='value-badge'>" + String(cfg.threshold, 1) + "°C</span></span>";
+  html += "<a href='/thUp'><button class='fake-link' style='min-width:40px;'>+</button></a>";
+  html += "<a href='/thDown'><button class='fake-link' style='min-width:40px;'>–</button></a>";
+  html += "</div>";
 
-  // Mode with ID
-  html += "<p>Mode: <span id='fanMode'>" + String(cfg.autoMode ? "AUTO" : "MANUAL") + "</span></p>";
+  // Control buttons
+  html += "<div style='margin:10px 0;'>";
+  html += "<a href='/fan/on'><button class='green'>ON</button></a>";
+  html += "<a href='/fan/off'><button class='red'>OFF</button></a>";
+  html += "<a href='/mode'><button>Switch Mode</button></a>";
+  html += "</div>";
 
-  // Threshold with ID
-  html += "<p>Threshold: <span id='fanThreshold'>" + String(cfg.threshold, 1) + "</span>°C ";
-  html += "<button onclick='thUp()'>+</button>";
-  html += "<button onclick='thDown()'>-</button>";
-  html += "</p>";
-
-  // Control buttons (NO reload)
-  html += "<button class='green' onclick='fanOn()'>ON</button>";
-  html += "<button class='red' onclick='fanOff()'>OFF</button>";
-  html += "<button onclick='toggleMode()'>Switch Mode</button>";
-  html += "<button onclick='updateWeather()'>Update Weather</button>";
-
-  html += "<a href='/slots'><button>Manage Time Slots</button></a>";
-
+  // Extra actions
+  html += "<div style='margin-top:8px;'>";
+  html += "<a href='/updateWeather'><button>⏳ Update Weather</button></a>";
+  html += "<a href='/slots'><button>📋 Manage Time Slots</button></a>";
+  html += "</div>";
   html += "</div>";
 
   /* ======================================================
@@ -755,54 +745,46 @@ void handleRoot() {
   html += "</div>";  // end container
 
   /* ======================================================
-     JavaScript (NO RELOAD + PARTIAL UI UPDATE)
+     JavaScript
   ====================================================== */
 
   html += "<script>";
 
-  // Fan ON
-  html += "function fanOn(){";
-  html += "fetch('/fan/on').then(()=>{";
-  html += "document.getElementById('fanStatus').innerText='ON';";
-  html += "document.getElementById('fanMode').innerText='MANUAL';";
-  html += "});}";
+  // Motor toggle function
+  html += "let motorState=false;";
+  html += "function toggleMotor(){";
+  html += "fetch('/rf');";
+  html += "let btn=document.getElementById('motorBtn');";
+  html += "motorState=!motorState;";
+  html += "if(motorState){";
+  html += "btn.classList.remove('green');";
+  html += "btn.classList.add('red');";
+  html += "btn.innerText='OFF';";
+  html += "}else{";
+  html += "btn.classList.remove('red');";
+  html += "btn.classList.add('green');";
+  html += "btn.innerText='ON';";
+  html += "}";
+  html += "}";
 
-  // Fan OFF
-  html += "function fanOff(){";
-  html += "fetch('/fan/off').then(()=>{";
-  html += "document.getElementById('fanStatus').innerText='OFF';";
-  html += "document.getElementById('fanMode').innerText='MANUAL';";
-  html += "});}";
+  // Time update function
+  html += "function refreshTime(){";
+  html += "const d=new Date();";
+  html += "let hours=d.getHours().toString().padStart(2,'0');";
+  html += "let mins=d.getMinutes().toString().padStart(2,'0');";
+  html += "document.getElementById('currentTime').innerText=hours+':'+mins;";
+  html += "}";
+  html += "setInterval(refreshTime,1000);";
+  html += "refreshTime();";
 
-  // Toggle Mode
-  html += "function toggleMode(){";
-  html += "fetch('/mode').then(()=>{";
-  html += "let mode = document.getElementById('fanMode');";
-  html += "mode.innerText = (mode.innerText=='AUTO')?'MANUAL':'AUTO';";
-  html += "});}";
-
-  // Threshold Increase
-  html += "function thUp(){";
-  html += "fetch('/thUp').then(()=>{";
-  html += "let el = document.getElementById('fanThreshold');";
-  html += "let val = parseFloat(el.innerText);";
-  html += "val += 0.5;";
-  html += "if(val>25) val=25;";
-  html += "el.innerText = val.toFixed(1);";
-  html += "});}";
-
-  // Threshold Decrease
-  html += "function thDown(){";
-  html += "fetch('/thDown').then(()=>{";
-  html += "let el = document.getElementById('fanThreshold');";
-  html += "let val = parseFloat(el.innerText);";
-  html += "val -= 0.5;";
-  html += "if(val<15) val=15;";
-  html += "el.innerText = val.toFixed(1);";
-  html += "});}";
-
-  // Weather update (no reload)
-  html += "function updateWeather(){ fetch('/updateWeather'); }";
+  // Mode toggle function
+  html += "window.toggleMode=function(spanId){";
+  html += "if(spanId==='fanMode'){";
+  html += "fetch('/mode');";
+  html += "}else if(spanId==='chickenMode'){";
+  html += "fetch('/chicken/mode');";
+  html += "}";
+  html += "}";
 
   html += "</script>";
 
@@ -1018,13 +1000,13 @@ void waterPump() {
   html += "<div class='card'>";
   html += "<h3>⚙ Motor Control</h3>";
   html += "<div class='button-wrapper'>";
-
+  
   // Button that sends RF signal
   html += "<button id='motorBtn' class='green' onclick='toggleMotor()'>OFF</button>";
-
-  html += "</div>";  // Close button-wrapper
-  html += "</div>";  // Close card
-  html += "</div>";  // Close container
+  
+  html += "</div>"; // Close button-wrapper
+  html += "</div>"; // Close card
+  html += "</div>"; // Close container
 
   // -------- Pump Toggle Script --------
   html += "<script>";
@@ -1056,95 +1038,131 @@ void waterPump() {
 
 
 /* ======================================================
-   Web Handlers (UPDATED FOR NO RELOAD)
+   Web Handlers
 ====================================================== */
 
 void handleFanOn() {
+
   cfg.autoMode = false;
   setFan(true);
   saveConfig();
-  server.send(200, "text/plain", "OK");
+
+  server.sendHeader("Location", "/");
+  server.send(303);
 }
 
 void handleFanOff() {
+
   cfg.autoMode = false;
   setFan(false);
   saveConfig();
-  server.send(200, "text/plain", "OK");
+
+  server.sendHeader("Location", "/");
+  server.send(303);
 }
 
 void handleMode() {
+
   cfg.autoMode = !cfg.autoMode;
   saveConfig();
-  server.send(200, "text/plain", "OK");
+
+  server.sendHeader("Location", "/");
+  server.send(303);
 }
 
 
+/* RF Signal Sender */
 
+void handleRF() {
 
+  rf.send(10168801, 24);
 
-void handleChickenOn() {
-  chickenAutoMode = false;
-  setChickenLight(true);
-  server.send(200, "text/plain", "OK");
-}
-
-void handleChickenOff() {
-  chickenAutoMode = false;
-  setChickenLight(false);
-  server.send(200, "text/plain", "OK");
-}
-
-void handleChickenMode() {
-  chickenAutoMode = !chickenAutoMode;
-  cfg.chickenAutoMode = chickenAutoMode;
-  saveConfig();
-  server.send(200, "text/plain", "OK");
-}
-
-void chickenThUp() {
-  chickenSummerThreshold += 0.5;
-  if (chickenSummerThreshold > 25) chickenSummerThreshold = 25;
-
-  cfg.chickenThreshold = chickenSummerThreshold;
-  lastChickenCheckHour = -1;
-
-  saveConfig();
-  server.send(200, "text/plain", "OK");
-}
-
-void chickenThDown() {
-  chickenSummerThreshold -= 0.5;
-  if (chickenSummerThreshold < 10) chickenSummerThreshold = 10;
-
-  cfg.chickenThreshold = chickenSummerThreshold;
-  lastChickenCheckHour = -1;
-
-  saveConfig();
-  server.send(200, "text/plain", "OK");
+  server.send(200, "text/plain", "Signal sent");
 }
 
 /* ======================================================
    Chicken Light Manual Controls
 ====================================================== */
 
+void handleChickenOn() {
 
+  chickenAutoMode = false;
+  setChickenLight(true);
 
+  server.sendHeader("Location", "/");
+  server.send(303);
+}
 
+void handleChickenOff() {
 
+  chickenAutoMode = false;
+  setChickenLight(false);
 
+  server.sendHeader("Location", "/");
+  server.send(303);
+}
+
+void handleChickenMode() {
+
+  chickenAutoMode = !chickenAutoMode;
+
+  cfg.chickenAutoMode = chickenAutoMode;
+
+  saveConfig();
+
+  server.sendHeader("Location", "/");
+  server.send(303);
+}
 
 /* ======================================================
    Chicken Light Threshold Increase
 ====================================================== */
 
+void chickenThUp() {
 
+  chickenSummerThreshold += 0.5;
+
+  if (chickenSummerThreshold > 25)
+    chickenSummerThreshold = 25;
+
+  cfg.chickenThreshold = chickenSummerThreshold;
+
+  //#############################################################################################
+
+  // This following line is needed for checking only, if want u can comment it out.
+  lastChickenCheckHour = -1;  // force new evaluation
+
+  //##############################################################################################
+  saveConfig();
+
+  server.sendHeader("Location", "/");
+  server.send(303);
+}
 
 /* ======================================================
    Chicken Light Threshold Decrease
 ====================================================== */
 
+void chickenThDown() {
 
+  chickenSummerThreshold -= 0.5;
+
+  if (chickenSummerThreshold < 10)
+    chickenSummerThreshold = 10;
+
+  cfg.chickenThreshold = chickenSummerThreshold;
+
+  //##################################################################################################
+
+  // This following line is needed for checking only, if want u can comment it out.
+  lastChickenCheckHour = -1;  // force new evaluation
+
+  //###################################################################################################
+  saveConfig();
+
+  server.sendHeader("Location", "/");
+  server.send(303);
+}
 
 
 /* ======================================================
