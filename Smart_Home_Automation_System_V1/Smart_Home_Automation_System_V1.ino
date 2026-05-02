@@ -556,6 +556,25 @@ void chickenLightLogic() {
    Web Interface
 ====================================================== */
 
+void handleStatus() {
+
+  String json = "{";
+  json.reserve(150);   // 🔥 Prevent memory fragmentation
+
+  json += "\"fan\":\"" + String(fanState ? "ON" : "OFF") + "\",";
+  json += "\"fanMode\":\"" + String(cfg.autoMode ? "AUTO" : "MANUAL") + "\",";
+  json += "\"chicken\":\"" + String(chickenLightState ? "ON" : "OFF") + "\",";
+  json += "\"chickenMode\":\"" + String(chickenAutoMode ? "AUTO" : "MANUAL") + "\",";
+  json += "\"temp\":" + String(currentTemp, 1) + ",";
+  json += "\"threshold\":" + String(cfg.threshold, 1) + ",";
+  json += "\"chickenThreshold\":" + String(chickenSummerThreshold, 1);
+
+  json += "}";
+
+  server.send(200, "application/json", json);
+}
+
+
 void handleRoot() {
   /* ======================================================
      Dynamic System Data
@@ -578,7 +597,7 @@ void handleRoot() {
   String html = "<!DOCTYPE html><html><head>";
   html += "<meta charset='UTF-8'>";
   html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
-  html += "<title>Smart Home Automation · Static Preview</title>";
+  html += "<title>🏠Smart Home Automation · Static Preview</title>";
   html += "<link rel='icon' href='https://cdn-icons-png.flaticon.com/128/7733/7733361.png'>";
 
   /* ======================================================
@@ -619,7 +638,7 @@ void handleRoot() {
   html += ".inline-group button{padding:6px 14px;margin:0;background:#dee2e6;}";
 
   // Value badge
-  html += ".value-badge{font-weight:600;background:#f1f5f9;padding:4px 10px;border-radius:30px;font-size:0.9rem;}";
+  html += ".value-badge{font-weight:600;background:#f1f5f9;padding:4px 10px;border-radius:30px;font-size:0.9rem;display:inline-block;width:70px;text-align:center;}";
 
   // Links
   html += "a{text-decoration:none;display:inline-block;}";
@@ -689,15 +708,15 @@ void handleRoot() {
   // Threshold controls
   html += "<div class='inline-group'>";
   html += "<span>Threshold: <span id='fanThreshold' class='value-badge'>" + String(cfg.threshold, 1) + "°C</span></span>";
-  html += "<a href='/thUp'><button class='fake-link' style='min-width:40px;'>+</button></a>";
-  html += "<a href='/thDown'><button class='fake-link' style='min-width:40px;'>–</button></a>";
+  html += "<button class='fake-link' style='min-width:40px;' onclick=\"thUp()\">+</button>";
+  html += "<button class='fake-link' style='min-width:40px;' onclick=\"thDown()\">–</button>";
   html += "</div>";
 
   // Control buttons
   html += "<div style='margin:10px 0;'>";
-  html += "<a href='/fan/on'><button class='green'>ON</button></a>";
-  html += "<a href='/fan/off'><button class='red'>OFF</button></a>";
-  html += "<a href='/mode'><button>Switch Mode</button></a>";
+  html += "<button class='green' onclick=\"fanOn()\">ON</button>";
+  html += "<button class='red' onclick=\"fanOff()\">OFF</button>";
+  html += "<button onclick=\"fanMode()\">Switch Mode</button>";
   html += "</div>";
 
   // Extra actions
@@ -719,15 +738,15 @@ void handleRoot() {
   // Summer threshold
   html += "<div class='inline-group'>";
   html += "<span>Summer threshold: <span id='chickenThreshold' class='value-badge'>" + String(chickenSummerThreshold, 1) + "°C</span></span>";
-  html += "<a href='/chickenThUp'><button class='fake-link'>+</button></a>";
-  html += "<a href='/chickenThDown'><button class='fake-link'>–</button></a>";
+  html += "<button class='fake-link' onclick=\"chickenThUp()\">+</button>";
+  html += "<button class='fake-link' onclick=\"chickenThDown()\">–</button>";
   html += "</div>";
 
   // Chicken buttons
   html += "<div style='margin:10px 0;'>";
-  html += "<a href='/chicken/on'><button class='green'>ON</button></a>";
-  html += "<a href='/chicken/off'><button class='red'>OFF</button></a>";
-  html += "<a href='/chicken/mode'><button>Switch Mode</button></a>";
+  html += "<button class='green' onclick=\"chickenOn()\">ON</button>";
+  html += "<button class='red' onclick=\"chickenOff()\">OFF</button>";
+  html += "<button onclick=\"chickenMode()\">Switch Mode</button>";
   html += "</div>";
   html += "</div>";
 
@@ -767,24 +786,51 @@ void handleRoot() {
   html += "}";
   html += "}";
 
-  // Time update function
+  // Time
   html += "function refreshTime(){";
   html += "const d=new Date();";
-  html += "let hours=d.getHours().toString().padStart(2,'0');";
-  html += "let mins=d.getMinutes().toString().padStart(2,'0');";
-  html += "document.getElementById('currentTime').innerText=hours+':'+mins;";
+  html += "let h=d.getHours().toString().padStart(2,'0');";
+  html += "let m=d.getMinutes().toString().padStart(2,'0');";
+  html += "document.getElementById('currentTime').innerText=h+':'+m;";
   html += "}";
-  html += "setInterval(refreshTime,1000);";
-  html += "refreshTime();";
+  html += "setInterval(refreshTime,1000);refreshTime();";
 
-  // Mode toggle function
-  html += "window.toggleMode=function(spanId){";
-  html += "if(spanId==='fanMode'){";
-  html += "fetch('/mode');";
-  html += "}else if(spanId==='chickenMode'){";
-  html += "fetch('/chicken/mode');";
+  // UI update
+  html += "function updateUI(){";
+  html += "fetch('/status').then(r=>r.json()).then(data=>{";
+
+  html += "document.getElementById('fanStatus').innerText=data.fan;";
+  html += "document.getElementById('fanMode').innerText=data.fanMode;";
+  html += "document.getElementById('chickenStatus').innerText=data.chicken;";
+  html += "document.getElementById('chickenMode').innerText=data.chickenMode;";
+  html += "document.getElementById('fanThreshold').innerText=data.threshold+'°C';";
+  html += "document.getElementById('weatherTemp').innerText=data.temp+'°C';";
+  html += "document.getElementById('chickenThreshold').innerText=data.chickenThreshold+'°C'";
+
+  html += "}).catch(()=>{});";
   html += "}";
-  html += "}";
+
+  // 🔥 Event-driven behavior
+  html += "function send(cmd){fetch(cmd).then(()=>updateUI()).catch(()=>{});}";
+
+  // Replace button calls
+  html += "function fanOn(){send('/fan/on');}";
+  html += "function fanOff(){send('/fan/off');}";
+  html += "function fanMode(){send('/mode');}";
+
+  html += "function chickenOn(){send('/chicken/on');}";
+  html += "function chickenOff(){send('/chicken/off');}";
+  html += "function chickenMode(){send('/chicken/mode');}";
+
+  // fan + chicken TH_controls
+  html += "function thUp(){send('/thUp');}";
+  html += "function thDown(){send('/thDown');}";
+  html += "function chickenThUp(){send('/chickenThUp');}";
+  html += "function chickenThDown(){send('/chickenThDown');}";
+
+  // Slow sync (backup)
+  html += "setInterval(updateUI,15000);";
+  html += "updateUI();";
 
   html += "</script>";
 
@@ -1000,13 +1046,13 @@ void waterPump() {
   html += "<div class='card'>";
   html += "<h3>⚙ Motor Control</h3>";
   html += "<div class='button-wrapper'>";
-  
+
   // Button that sends RF signal
   html += "<button id='motorBtn' class='green' onclick='toggleMotor()'>OFF</button>";
-  
-  html += "</div>"; // Close button-wrapper
-  html += "</div>"; // Close card
-  html += "</div>"; // Close container
+
+  html += "</div>";  // Close button-wrapper
+  html += "</div>";  // Close card
+  html += "</div>";  // Close container
 
   // -------- Pump Toggle Script --------
   html += "<script>";
@@ -1047,8 +1093,7 @@ void handleFanOn() {
   setFan(true);
   saveConfig();
 
-  server.sendHeader("Location", "/");
-  server.send(303);
+  server.send(200, "text/plain", "OK");
 }
 
 void handleFanOff() {
@@ -1057,8 +1102,7 @@ void handleFanOff() {
   setFan(false);
   saveConfig();
 
-  server.sendHeader("Location", "/");
-  server.send(303);
+  server.send(200, "text/plain", "OK");
 }
 
 void handleMode() {
@@ -1066,8 +1110,7 @@ void handleMode() {
   cfg.autoMode = !cfg.autoMode;
   saveConfig();
 
-  server.sendHeader("Location", "/");
-  server.send(303);
+  server.send(200, "text/plain", "OK");
 }
 
 
@@ -1087,19 +1130,23 @@ void handleRF() {
 void handleChickenOn() {
 
   chickenAutoMode = false;
+  cfg.chickenAutoMode = chickenAutoMode;
   setChickenLight(true);
 
-  server.sendHeader("Location", "/");
-  server.send(303);
+  saveConfig();
+
+  server.send(200, "text/plain", "OK");
 }
 
 void handleChickenOff() {
 
   chickenAutoMode = false;
+  cfg.chickenAutoMode = chickenAutoMode; 
   setChickenLight(false);
 
-  server.sendHeader("Location", "/");
-  server.send(303);
+  saveConfig();
+
+  server.send(200, "text/plain", "OK");
 }
 
 void handleChickenMode() {
@@ -1110,8 +1157,7 @@ void handleChickenMode() {
 
   saveConfig();
 
-  server.sendHeader("Location", "/");
-  server.send(303);
+  server.send(200, "text/plain", "OK");
 }
 
 /* ======================================================
@@ -1133,10 +1179,10 @@ void chickenThUp() {
   lastChickenCheckHour = -1;  // force new evaluation
 
   //##############################################################################################
+
   saveConfig();
 
-  server.sendHeader("Location", "/");
-  server.send(303);
+  server.send(200, "text/plain", "OK");
 }
 
 /* ======================================================
@@ -1158,12 +1204,11 @@ void chickenThDown() {
   lastChickenCheckHour = -1;  // force new evaluation
 
   //###################################################################################################
+
   saveConfig();
 
-  server.sendHeader("Location", "/");
-  server.send(303);
+  server.send(200, "text/plain", "OK");
 }
-
 
 /* ======================================================
    Setup Function
@@ -1266,6 +1311,8 @@ void setup() {
   server.on("/chicken/mode", handleChickenMode);
   server.on("/chickenThUp", chickenThUp);
   server.on("/chickenThDown", chickenThDown);
+
+  server.on("/status", handleStatus);
 
   server.begin();
 }
